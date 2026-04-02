@@ -25,7 +25,7 @@ export function useApp(token: string) {
   });
 
   const abortRef = useRef(false);
-  const separateRef = useRef<() => Promise<void>>();
+  const separateRef = useRef<(() => Promise<void>) | undefined>(undefined);
 
   const log = useCallback((msg: string) => {
     const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
