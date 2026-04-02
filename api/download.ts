@@ -4,6 +4,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization');
     return res.status(200).end();
   }
 
@@ -11,7 +12,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { url, filename } = req.query;
+  const { url, filename, token } = req.query;
 
   if (!url || typeof url !== 'string') {
     return res.status(400).json({ error: 'url query parameter is required' });
@@ -22,8 +23,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Only replicate.delivery URLs are allowed' });
   }
 
+  // Token: prefer query param, fall back to Authorization header, then env
+  const replicateToken = typeof token === 'string' && token
+    ? token
+    : (req.headers.authorization?.replace(/^Bearer\s+/i, '') || process.env.REPLICATE_API_TOKEN);
+
   try {
-    const response = await fetch(url);
+    const headers: Record<string, string> = {};
+    if (replicateToken) {
+      headers['Authorization'] = `Bearer ${replicateToken}`;
+    }
+
+    const response = await fetch(url, { headers });
 
     if (!response.ok) {
       return res.status(response.status).json({ error: 'Failed to fetch file' });

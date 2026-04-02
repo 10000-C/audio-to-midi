@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { AppState, StemState, StemStatus } from './types';
 import { STEMS } from './types';
 import {
@@ -8,7 +8,7 @@ import {
   getDownloadUrl,
 } from './api';
 
-export function useApp() {
+export function useApp(token: string) {
   const [appState, setAppState] = useState<AppState>({
     step: 'idle',
     fileName: null,
@@ -25,6 +25,7 @@ export function useApp() {
   });
 
   const abortRef = useRef(false);
+  const separateRef = useRef<() => Promise<void>>();
 
   const log = useCallback((msg: string) => {
     const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
@@ -61,19 +62,21 @@ export function useApp() {
 
     try {
       log(`📤 上传文件: ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`);
-      const { uri } = await uploadAudio(file);
+      const { uri } = await uploadAudio(file, token);
       if (abortRef.current) return;
 
-      log('✅ 上传完成');
+      log('✅ 上传完成，自动开始分离...');
       setAppState((prev) => ({ ...prev, step: 'ready', audioUri: uri }));
     } catch (err: any) {
       log(`❌ 上传失败: ${err.message}`);
       setAppState((prev) => ({ ...prev, step: 'idle' }));
     }
-  }, [log]);
+  }, [log, token]);
 
   // ====== Step 2: Separate ======
   const separate = useCallback(async () => {
+    if (appState.step !== 'ready' || !appState.audioUri) return;
+
     abortRef.current = false;
     setAppState((prev) => ({ ...prev, step: 'separating' }));
 
@@ -82,14 +85,14 @@ export function useApp() {
 
       const prediction = await createPrediction('demucs', {
         audio: appState.audioUri,
-      });
+      }, token);
       if (abortRef.current) return;
 
       log(`⏳ 分离中... (prediction: ${prediction.id?.slice(0, 8)})`);
 
       const result = await pollUntilDone(prediction.id!, (status) => {
         if (status === 'processing') log('🔄 正在处理音频...');
-      });
+      }, 300_000, 3000, token);
       if (abortRef.current) return;
 
       // Parse Demucs output: { drums: "url", bass: "url", ... }
@@ -115,7 +118,17 @@ export function useApp() {
       log(`❌ 分离失败: ${err.message}`);
       setAppState((prev) => ({ ...prev, step: 'ready' }));
     }
-  }, [appState.audioUri, log]);
+  }, [appState.audioUri, appState.step, log, token]);
+
+  // Keep ref in sync
+  separateRef.current = separate;
+
+  // Bug2: auto-trigger separate when step becomes 'ready'
+  useEffect(() => {
+    if (appState.step === 'ready' && appState.audioUri) {
+      separateRef.current?.();
+    }
+  }, [appState.step, appState.audioUri]);
 
   // ====== Step 3: Transcribe single stem ======
   const transcribeStem = useCallback(async (index: number) => {
@@ -128,7 +141,7 @@ export function useApp() {
     try {
       const prediction = await createPrediction('basic-pitch', {
         audio_file: stem.audioUrl,
-      });
+      }, token);
       if (abortRef.current) return;
 
       const result = await pollUntilDone(
@@ -137,7 +150,8 @@ export function useApp() {
           if (status === 'processing') log(`  🔄 ${stem.label} 转录中...`);
         },
         300_000,
-        2000
+        2000,
+        token
       );
       if (abortRef.current) return;
 
@@ -159,7 +173,7 @@ export function useApp() {
       log(`❌ ${stem.label} 转录失败: ${err.message}`);
       updateStem(index, { status: 'separated', error: err.message });
     }
-  }, [appState.stems, log, updateStem]);
+  }, [appState.stems, log, updateStem, token]);
 
   // ====== Step 3: Transcribe ALL stems ======
   const transcribeAll = useCallback(async () => {
@@ -217,7 +231,7 @@ export function useApp() {
     transcribeStem,
     transcribeAll,
     reset,
-    getMidiDownloadUrl: getDownloadUrl,
-    getStemDownloadUrl: getDownloadUrl,
+    getMidiDownloadUrl: (url: string, filename: string) => getDownloadUrl(url, filename, token),
+    getStemDownloadUrl: (url: string, stemName: string) => getDownloadUrl(url, `${stemName}.mp3`, token),
   };
 }

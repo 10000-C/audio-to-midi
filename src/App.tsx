@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useApp } from './useApp';
 import type { StemState } from './types';
 import UploadZone from './components/UploadZone';
@@ -6,6 +7,7 @@ import ResultPanel from './components/ResultPanel';
 import './App.css';
 
 export default function App() {
+  const [token, setToken] = useState('');
   const {
     step,
     fileName,
@@ -17,17 +19,17 @@ export default function App() {
     reset,
     getMidiDownloadUrl,
     getStemDownloadUrl,
-  } = useApp();
+  } = useApp(token);
 
   const handleDownloadMidi = async (stem: StemState) => {
     if (!stem.midiUrl) return;
-    const url = await getMidiDownloadUrl(stem.midiUrl, stem.midiFilename ?? `${stem.key}.mid`);
+    const url = getMidiDownloadUrl(stem.midiUrl, stem.midiFilename ?? `${stem.key}.mid`);
     if (url) window.open(url, '_blank');
   };
 
   const handleDownloadAudio = async (stem: StemState) => {
     if (!stem.audioUrl) return;
-    const url = await getStemDownloadUrl(stem.audioUrl, `${stem.key}_stem.mp3`);
+    const url = getStemDownloadUrl(stem.audioUrl, `${stem.key}_stem.mp3`);
     if (url) window.open(url, '_blank');
   };
 
@@ -38,6 +40,17 @@ export default function App() {
       <header className="app-header">
         <h1>🎵 Audio → MIDI</h1>
         <p className="app-subtitle">上传音频 → 分离音轨 → 逐轨转录 MIDI</p>
+        <div className="token-input-wrapper">
+          <label className="token-label" htmlFor="api-token">🔑 Replicate API Token</label>
+          <input
+            id="api-token"
+            className="token-input"
+            type="password"
+            placeholder="r8_xxxxxxxxxxxxxxxxxxxx"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+          />
+        </div>
       </header>
 
       <main className="app-main">

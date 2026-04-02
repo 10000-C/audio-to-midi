@@ -12,7 +12,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     return res.status(200).end();
   }
 
@@ -20,7 +20,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const token = process.env.REPLICATE_API_TOKEN;
+  // Prefer client-supplied token, fall back to env variable
+  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '')
+    || process.env.REPLICATE_API_TOKEN;
   if (!token) {
     return res.status(500).json({ error: 'REPLICATE_API_TOKEN not configured' });
   }

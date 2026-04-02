@@ -2,10 +2,12 @@ import type { Prediction } from './types';
 
 const BASE = '/api';
 
-async function post<T>(path: string, body?: unknown): Promise<T> {
+async function post<T>(path: string, body?: unknown, token?: string): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -16,14 +18,16 @@ async function post<T>(path: string, body?: unknown): Promise<T> {
 }
 
 // Upload audio to Replicate (returns { uri: string })
-export async function uploadAudio(file: File): Promise<{ uri: string }> {
+export async function uploadAudio(file: File, token?: string): Promise<{ uri: string }> {
   // Convert to ArrayBuffer and send as raw binary
   const buffer = await file.arrayBuffer();
+  const headers: Record<string, string> = {
+    'Content-Type': file.type || 'application/octet-stream',
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${BASE}/upload`, {
     method: 'POST',
-    headers: {
-      'Content-Type': file.type || 'application/octet-stream',
-    },
+    headers,
     body: buffer,
   });
   if (!res.ok) {
@@ -36,14 +40,15 @@ export async function uploadAudio(file: File): Promise<{ uri: string }> {
 // Create prediction
 export async function createPrediction(
   model: 'demucs' | 'basic-pitch',
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  token?: string
 ): Promise<Prediction> {
-  return post<Prediction>('/predict', { action: 'create', model, input });
+  return post<Prediction>('/predict', { action: 'create', model, input }, token);
 }
 
 // Poll prediction
-export async function pollPrediction(predictionId: string): Promise<Prediction> {
-  return post<Prediction>('/predict', { action: 'poll', predictionId });
+export async function pollPrediction(predictionId: string, token?: string): Promise<Prediction> {
+  return post<Prediction>('/predict', { action: 'poll', predictionId }, token);
 }
 
 // Poll until terminal status (with timeout)
@@ -51,7 +56,8 @@ export async function pollUntilDone(
   predictionId: string,
   onProgress?: (status: string) => void,
   timeoutMs = 300_000, // 5 minutes max
-  intervalMs = 3000
+  intervalMs = 3000,
+  token?: string
 ): Promise<Prediction> {
   const start = Date.now();
 
@@ -60,7 +66,7 @@ export async function pollUntilDone(
       throw new Error('Prediction timed out');
     }
 
-    const prediction = await pollPrediction(predictionId);
+    const prediction = await pollPrediction(predictionId, token);
     onProgress?.(prediction.status);
 
     if (prediction.status === 'succeeded') return prediction;
@@ -74,11 +80,13 @@ export async function pollUntilDone(
 }
 
 // Get download URL for MIDI (proxied)
-export function getDownloadUrl(fileUrl: string, filename: string): string {
-  return `${BASE}/download?url=${encodeURIComponent(fileUrl)}&filename=${encodeURIComponent(filename)}`;
+export function getDownloadUrl(fileUrl: string, filename: string, token?: string): string {
+  let url = `${BASE}/download?url=${encodeURIComponent(fileUrl)}&filename=${encodeURIComponent(filename)}`;
+  if (token) url += `&token=${encodeURIComponent(token)}`;
+  return url;
 }
 
 // Get download URL for audio stem (proxied)
-export function getStemDownloadUrl(fileUrl: string, stemName: string): string {
-  return `${BASE}/download?url=${encodeURIComponent(fileUrl)}&filename=${encodeURIComponent(stemName + '.mp3')}`;
+export function getStemDownloadUrl(fileUrl: string, stemName: string, token?: string): string {
+  return getDownloadUrl(fileUrl, `${stemName}.mp3`, token);
 }
